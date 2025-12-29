@@ -1,112 +1,91 @@
 import streamlit as st
-from openai import OpenAI
+import google.generativeai as genai
+from PIL import Image
+import os
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Trạng Nguyên AI - Gia Sư Toán Tiểu Học", page_icon="🎓")
+st.set_page_config(page_title="Giáo Sư Pi - Gia sư Toán AI", page_icon="🎓", layout="centered")
 
-# --- CSS TÙY CHỈNH CHO ĐẸP MẮT ---
+# Nhúng CSS để giao diện thân thiện với trẻ em
 st.markdown("""
-<style>
-    .stChatMessage {
-        border-radius: 15px;
-        padding: 10px;
-    }
-    .user-msg {
-        background-color: #e6f3ff;
-    }
-    h1 {
-        color: #d35400;
-        text-align: center;
-    }
-</style>
-""", unsafe_allow_html=True)
+    <style>
+    .stApp { background-color: #f0f8ff; }
+    .stChatMessage { border-radius: 15px; }
+    h1 { color: #1E90FF; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- HEADER ---
-col1, col2 = st.columns([1, 4])
-with col1:
-    st.image("https://cdn-icons-png.flaticon.com/512/3426/3426653.png", width=80) # Icon mũ trạng nguyên
-with col2:
-    st.title("Trạng Nguyên AI")
-    st.caption("🎓 Gia sư Toán Tiểu học - Chuẩn bộ sách 'Kết Nối Tri Thức'")
+# --- CẤU HÌNH AI ---
+# Lưu ý: Thay 'YOUR_API_KEY' bằng key của bạn hoặc dùng Streamlit Secrets
+API_KEY = st.sidebar.text_input("Nhập Gemini API Key của bạn:", type="password")
 
-st.markdown("---")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash') # Model mạnh về Vision & Tốc độ
+else:
+    st.warning("Vui lòng nhập API Key ở thanh bên để bắt đầu!")
 
-# --- SIDEBAR CẤU HÌNH ---
-with st.sidebar:
-    st.header("⚙️ Cấu hình")
-    api_key = st.text_input("Nhập OpenAI API Key", type="password", help="Hỏi bố mẹ để lấy chìa khóa bí mật nhé!")
-    st.warning("⚠️ Lưu ý: AI chỉ là công cụ hỗ trợ. Con hãy tự tư duy nhé!")
-    
-    st.divider()
-    st.markdown("**Hướng dẫn:**")
-    st.markdown("1. Nhập đề bài toán vào ô chat.")
-    st.markdown("2. Trạng Nguyên sẽ gợi ý từng bước.")
-    st.markdown("3. Đừng quên chuẩn bị giấy nháp!")
-
-# --- LOGIC AI ---
-if not api_key:
-    st.info("👋 Chào phụ huynh và các bé! Vui lòng nhập **API Key** bên trái để bắt đầu buổi học.")
-    st.stop()
-
-client = OpenAI(api_key=api_key)
-
-# SYSTEM PROMPT (BÍ KÍP CỦA BẠN NẰM Ở ĐÂY)
+# --- PROMPT HỆ THỐNG (BỘ NÃO CỦA GIÁO SƯ PI) ---
 SYSTEM_PROMPT = """
-### VAI TRÒ (ROLE)
-Bạn là "Trạng Nguyên AI" - Một Giáo sư Toán học kiêm Nhà giáo ưu tú với 20 năm kinh nghiệm dạy Tiểu học tại Việt Nam. Bạn đang giảng dạy theo giáo trình "Kết Nối Tri Thức với Cuộc Sống" (KNTT).
+Bạn là "Giáo Sư Pi" - gia sư toán tiểu học (Lớp 1-5) tại Việt Nam.
+Nhiệm vụ: Hướng dẫn học sinh giải toán theo phương pháp Socratic (không cho đáp án ngay, đặt câu hỏi gợi mở).
+Phong cách: Vui vẻ như Doraemon, sâu sắc như giáo sư. Xưng hô: Thầy Pi - Con.
 
-### ĐỐI TƯỢNG (USER)
-Học sinh tiểu học (Lớp 1 đến Lớp 5). Đặc điểm: Dễ mất tập trung, sợ sai, cần sự khích lệ.
-
-### NGUYÊN TẮC BẤT DI BẤT DỊCH (CORE RULES)
-1. KHÔNG BAO GIỜ đưa ra đáp án ngay lập tức.
-2. Socratic Method: Luôn đặt câu hỏi ngược lại để dẫn dắt.
-3. Tone & Voice: Ấm áp, hài hước, dùng nhiều Emoji (🌟, 🎉, 🤖). Xưng hô: "Thầy" và "Con".
-4. Chuẩn Sách Giáo Khoa (KNTT):
-   - Phải hướng dẫn tóm tắt.
-   - Phải vẽ sơ đồ tư duy/đoạn thẳng (dùng text art) với bài toán lời văn.
-   - Cấu trúc: [Gợi ý] -> [Hỏi lại] -> [Khen ngợi].
-
-### QUY TRÌNH
-Bước 1: Khen ngợi & Hỏi lớp (nếu chưa biết).
-Bước 2: Phân tích đề bài (Tìm cái đã biết, cái cần tìm).
-Bước 3: Gợi ý phương pháp (Vẽ sơ đồ, chọn phép tính).
-Bước 4: Chỉ đưa bài giải mẫu khi học sinh đã làm đúng.
+QUY TRÌNH XỬ LÝ ẢNH:
+1. Xác nhận đề bài từ ảnh: "Thầy Pi thấy đề bài là... đúng không con?"
+2. Chờ phản hồi hoặc hướng dẫn từng bước nhỏ.
+3. Nếu chữ xấu, hãy nhắc nhở nhẹ nhàng.
 """
 
-# --- QUẢN LÝ HỘI THOẠI ---
+# --- GIAO DIỆN NGƯỜI DÙNG ---
+st.title("🎓 Giáo Sư Pi - Gia sư Toán AI")
+st.caption("Con chụp ảnh bài tập hoặc nhắn tin để Thầy Pi hướng dẫn nhé!")
+
+# Khởi tạo lịch sử chat
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "assistant", "content": "Chào con! Thầy là **Trạng Nguyên AI** đây! 👋🤖\n\nCon đang học lớp mấy và hôm nay bài toán nào làm khó con thế? Nói cho thầy nghe đi! 💪"}
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Chào con! Thầy Pi đã sẵn sàng. Hôm nay có bài toán nào làm khó con sao?"}
     ]
 
-for msg in st.session_state.messages:
-    if msg["role"] != "system":
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+# Hiển thị lịch sử chat
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-# --- XỬ LÝ CHAT ---
-if prompt := st.chat_input("Nhập đề bài hoặc câu trả lời của con..."):
+# --- CHỨC NĂNG TẢI ẢNH ---
+uploaded_file = st.file_uploader("📸 Chụp hoặc tải ảnh bài toán", type=["jpg", "jpeg", "png"])
+
+if uploaded_file:
+    img = Image.open(uploaded_file)
+    st.image(img, caption="Ảnh bài toán con gửi", use_column_width=True)
+
+# --- XỬ LÝ NHẬP LIỆU ---
+if prompt := st.chat_input("Hỏi Thầy Pi..."):
+    # Hiển thị tin nhắn người dùng
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.write(prompt)
+        st.markdown(prompt)
 
+    # Gọi AI xử lý
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
         
-        stream = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=st.session_state.messages,
-            stream=True,
-        )
-        
-        for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
-                full_response += chunk.choices[0].delta.content
-                message_placeholder.markdown(full_response + "▌")
-        
-        message_placeholder.markdown(full_response)
-    
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+        try:
+            input_data = [SYSTEM_PROMPT, prompt]
+            if uploaded_file:
+                input_data.append(img)
+            
+            # Gửi tới Gemini
+            response = model.generate_content(input_data)
+            full_response = response.text
+            
+            message_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            
+        except Exception as e:
+            st.error(f"Có lỗi xảy ra rồi: {e}")
+
+# --- FOOTER ---
+st.divider()
+st.info("Mẹo: Con nên chụp ảnh rõ nét và đủ ánh sáng để Thầy Pi nhìn chuẩn nhất nhé!")
